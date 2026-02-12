@@ -1,0 +1,137 @@
+# 1. Namespace de l'application
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: app-passthrough
+  labels:
+    istio-discovery: default   # nécessaire si sidecar injection utilisée
+---
+# 2. Déploiement d'une app NGINX avec TLS intégré
+# D'abord créer le certificat self-signed pour l'app
+# openssl req -x509 -nodes -newkey rsa:2048 -days 365 \
+#   -keyout tls.key -out tls.crt \
+#   -subj "/CN=myapp.gwapi.apps.cluster.example.com"
+# oc create secret tls app-tls-secret --cert=tls.crt --key=tls.key -n app-passthrough
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-https
+  namespace: app-passthrough
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-https
+  template:
+    metadata:
+      labels:
+        app: nginx-https
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:latest
+          ports:
+            - containerPort: 8443
+          volumeMounts:
+            - name: tls-certs
+              mountPath: /etc/nginx/certs
+              readOnly: true
+            - name: nginx-config
+              mountPath: /etc/nginx/conf.d
+      volumes:
+        - name: tls-certs
+          secret:
+            secretName: app-tls-secret   # secret TLS créé par l'app elle-même
+        - name: nginx-config
+          configMap:
+            name: nginx-https-config
+---
+# 3. ConfigMap NGINX pour HTTPS natif
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-https-config
+  namespace: app-passthrough
+data:
+  default.conf: |
+    server {
+      listen 8443 ssl;
+      ssl_certificate     /etc/nginx/certs/tls.crt;
+      ssl_certificate_key /etc/nginx/certs/tls.key;
+      location / {
+        return 200 'TLS Passthrough OK - servi par NGINX';
+        add_header Content-Type text/plain;
+      }
+    }
+---
+# 4. Service exposant le port HTTPS de l'app
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-https-svc
+  namespace: app-passthrough
+spec:
+  selector:
+    app: nginx-https
+  ports:
+    - name: https
+      port: 443
+      targetPort: 8443
+---
+# 6. ReferenceGrant pour permettre à la Gateway dans openshift-ingress
+#    de référencer le Service dans app-passthrough
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: allow-from-openshift-ingress
+  namespace: app-passthrough
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      namespace: openshift-ingress
+  to:
+    - group: ""
+      kind: Service
+---
+# Gateway (identique à la variante A)
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: passthrough-gateway
+  namespace: openshift-ingress
+spec:
+  gatewayClassName: openshift-default
+  listeners:
+    - name: tls-passthrough
+      hostname: "myapp.gwapi.apps.cluster.example.com"
+      port: 443
+      protocol: TLS
+      tls:
+        mode: Passthrough
+      allowedRoutes:
+        namespaces:
+          from: All
+---
+# VirtualService Istio (en remplacement du TLSRoute)
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: nginx-passthrough-vs
+  namespace: app-passthrough
+spec:
+  hosts:
+    - "myapp.gwapi.apps.cluster.example.com"
+  gateways:
+    - openshift-ingress/passthrough-gateway
+  tls:
+    - match:
+        - port: 443
+          sniHosts:
+            - "myapp.gwapi.apps.cluster.example.com"
+      route:
+        - destination:
+            host: nginx-https-svc.app-passthrough.svc.cluster.local
+            port:
+              number: 443
