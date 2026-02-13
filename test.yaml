@@ -114,24 +114,41 @@ spec:
         namespaces:
           from: All
 ---
-# VirtualService Istio (en remplacement du TLSRoute)
-apiVersion: networking.istio.io/v1
-kind: VirtualService
+apiVersion: operator.openshift.io/v1
+kind: IngressController
 metadata:
-  name: nginx-passthrough-vs
-  namespace: app-passthrough
+  name: external
+  namespace: openshift-ingress-operator
 spec:
-  hosts:
-    - "myapp.gwapi.apps.cluster.example.com"
-  gateways:
-    - openshift-ingress/passthrough-gateway
-  tls:
-    - match:
-        - port: 443
-          sniHosts:
-            - "myapp.gwapi.apps.cluster.example.com"
-      route:
-        - destination:
-            host: nginx-https-svc.app-passthrough.svc.cluster.local
-            port:
-              number: 443
+  domain: apps.mondomaine.com
+  endpointPublishingStrategy:
+    type: LoadBalancerService
+    loadBalancer:
+      scope: External
+      # Si MetalLB :
+      # providerParameters:
+      #   type: Bare Metal
+  # Sélectionner seulement les routes taguées "external"
+  routeSelector:
+    matchLabels:
+      expose: external
+  # Dédier des nodes spécifiques si besoin
+  nodePlacement:
+    nodeSelector:
+      matchLabels:
+        node-role.kubernetes.io/worker: ""
+  replicas: 2
+  ---
+  apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: app1
+  labels:
+    expose: external          # ← ExternalDNS via IC "external" + LB IP
+  annotations:
+    external-dns.alpha.kubernetes.io/hostname: app1.apps.mondomaine.com
+spec:
+  host: app1.apps.mondomaine.com
+  to:
+    kind: Service
+    name: app1-service
