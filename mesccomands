@@ -1,0 +1,3 @@
+oc logs -n openshift-kube-apiserver \
+  -l app=openshift-kube-apiserver \
+  --tail=200 | grep -i "webhook\|admission\|external-dns"
