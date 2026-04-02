@@ -36,7 +36,7 @@ def mutate():
         if svc_name == f"router-{ic_name}":
             annotation_key = "external-dns.alpha.kubernetes.io/hostname"
             annotation_value = f"{svc_name}.{domain}"
-            print(f"[INFO] Annotation ajoutée : {annotation_key}={annotation_value}", file=sys.stderr)
+            print(f"[INFO] Annotation à appliquer sur {svc_name}: {annotation_key}={annotation_value}", file=sys.stderr)
             return admission_response(req, svc, annotation_key, annotation_value)
 
     return admission_response(req)
@@ -44,8 +44,8 @@ def mutate():
 
 def admission_response(req, svc=None, annotation_key=None, annotation_value=None):
     resp = {
-        "apiVersion": "admission.k8s.io/v1",   # ✅ Obligatoire
-        "kind": "AdmissionReview",               # ✅ Obligatoire
+        "apiVersion": "admission.k8s.io/v1",
+        "kind": "AdmissionReview",
         "response": {
             "uid": req["request"]["uid"],
             "allowed": True,
@@ -54,22 +54,17 @@ def admission_response(req, svc=None, annotation_key=None, annotation_value=None
 
     if annotation_key and annotation_value and svc is not None:
         existing_annotations = svc.get('metadata', {}).get('annotations') or {}
+        
+        # ✅ "replace" si l'annotation existe déjà, "add" sinon
+        op = "replace" if annotation_key in existing_annotations else "add"
 
-        # ✅ Fix Bug #1 : créer /metadata/annotations si inexistant
-        if existing_annotations:
-            patch = [{
-                "op": "add",
-                "path": f"/metadata/annotations/{annotation_key.replace('/', '~1')}",
-                "value": annotation_value
-            }]
-        else:
-            patch = [{
-                "op": "add",
-                "path": "/metadata/annotations",
-                "value": {annotation_key: annotation_value}
-            }]
+        patch = [{
+            "op": op,
+            "path": f"/metadata/annotations/{annotation_key.replace('/', '~1')}",
+            "value": annotation_value
+        }]
 
-        print(f"[DEBUG] Patch envoyé: {patch}", file=sys.stderr)
+        print(f"[DEBUG] Op: {op} | Patch: {patch}", file=sys.stderr)
         patch_bytes = json.dumps(patch).encode()
         resp["response"]["patchType"] = "JSONPatch"
         resp["response"]["patch"] = base64.b64encode(patch_bytes).decode()
