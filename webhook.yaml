@@ -1,0 +1,85 @@
+import os
+import sys
+import base64
+import json
+from flask import Flask, request, jsonify
+from kubernetes import client, config
+
+app = Flask(__name__)
+config.load_incluster_config()
+
+@app.route('/mutate', methods=['POST'])
+def mutate():
+    req = request.get_json()
+    svc = req['request']['object']
+
+    if svc.get('spec', {}).get('type') != 'LoadBalancer':
+        return admission_response(req)
+
+    api = client.CustomObjectsApi()
+    ics = api.list_cluster_custom_object(
+        group="operator.openshift.io",
+        version="v1",
+        plural="ingresscontrollers",
+        _request_timeout=5,
+    )['items']
+
+    for ic in ics:
+        endpoint_publishing = ic['spec'].get('endpointPublishingStrategy', {})
+        if endpoint_publishing.get('type') == 'HostNetwork':
+            continue
+
+        ic_name = ic['metadata']['name']
+        domain = ic['status'].get('domain')
+        svc_name = svc['metadata']['name']
+
+        if svc_name == f"router-{ic_name}":
+            annotation_key = "external-dns.alpha.kubernetes.io/hostname"
+            annotation_value = f"{svc_name}.{domain}"
+            print(f"[INFO] Annotation ajoutée : {annotation_key}={annotation_value}", file=sys.stderr)
+            return admission_response(req, svc, annotation_key, annotation_value)
+
+    return admission_response(req)
+
+
+def admission_response(req, svc=None, annotation_key=None, annotation_value=None):
+    resp = {
+        "apiVersion": "admission.k8s.io/v1",   # ✅ Obligatoire
+        "kind": "AdmissionReview",               # ✅ Obligatoire
+        "response": {
+            "uid": req["request"]["uid"],
+            "allowed": True,
+        }
+    }
+
+    if annotation_key and annotation_value and svc is not None:
+        existing_annotations = svc.get('metadata', {}).get('annotations') or {}
+
+        # ✅ Fix Bug #1 : créer /metadata/annotations si inexistant
+        if existing_annotations:
+            patch = [{
+                "op": "add",
+                "path": f"/metadata/annotations/{annotation_key.replace('/', '~1')}",
+                "value": annotation_value
+            }]
+        else:
+            patch = [{
+                "op": "add",
+                "path": "/metadata/annotations",
+                "value": {annotation_key: annotation_value}
+            }]
+
+        print(f"[DEBUG] Patch envoyé: {patch}", file=sys.stderr)
+        patch_bytes = json.dumps(patch).encode()
+        resp["response"]["patchType"] = "JSONPatch"
+        resp["response"]["patch"] = base64.b64encode(patch_bytes).decode()
+
+    return jsonify(resp)
+
+
+if __name__ == '__main__':
+    app.run(
+        host='0.0.0.0',
+        port=8443,
+        ssl_context=(os.environ["SSL_CERT_FILE"], os.environ["SSL_KEY_FILE"])
+    )
