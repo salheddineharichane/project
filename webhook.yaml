@@ -78,6 +78,3 @@ if __name__ == '__main__':
         port=8443,
         ssl_context=(os.environ["SSL_CERT_FILE"], os.environ["SSL_KEY_FILE"])
     )
-
-
-La fonctionnalité ajoutée à external-dns v0.21.0 permet d'émettre des Kubernetes Events directement sur les ressources Service, Ingress, OCP Route et HTTPRoute. Quand external-dns crée ou met à jour un enregistrement DNS avec succès, un event RecordReady est émis sur la ressource concernée. Si le hostname est déjà géré par une autre ressource Kubernetes, que ce soit dans le même cluster ou dans un cluster distant, un event Warning RecordConflict est émis sur la ressource conflictuelle en précisant quelle ressource possède déjà cet enregistrement DNS et, le cas échéant, de quel cluster il provient. Ces événements sont visibles directement via oc describe sur la ressource, sans avoir à consulter les logs du pod external-dns.
