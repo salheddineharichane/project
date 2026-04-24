@@ -54,6 +54,17 @@ spec:
           receivers: [otlp]
           processors: [resource, batch]
           exporters: [kafka]
+exporters:
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    logs:
+      receivers: [otlp]
+      processors: [resource, batch]
+      exporters: [kafka, debug]   # ajoute debug temporairemen
+      
 Le point clé : topic_from_attribute
 Le champ topic_from_attribute indique au Kafka Exporter d'utiliser la valeur d'un attribut de ressource comme nom de topic :
 yamlexporters:
