@@ -153,14 +153,4 @@ spec:
     kind: Service
     name: app1-service
 
-
-
-Salut Landry !
-
-Je reviens vers toi pour les deux sujets que tu m'as filés hier.
-
-Pour info, j'ai passé toute la semaine avec Maxime sur son automatisation (à la demande de Yohan). On a bien avancé et j’en ai profité pour revoir pas mal de points dans son code : j’ai pu lui faire pas mal de propositions et apporter mes idées pour optimiser l'ensemble.
-
-On a aussi finalisé les Helm Charts. C’était un passage obligé parce que si on lance le déploiement sans ça, la moindre modif devient un vrai casse-tête par la suite. J'ai un point avec lui cet après-midi pour valider la V1.0 et on commence à déployer lundi.
-
 Du coup, concernant tes deux sujets, comme le délai est hyper court et que je ne les ai pas suivis au début, je vais avoir besoin d'un peu de temps pour absorber la doc et faire mes tests. Honnêtement, ça va être chaud de tout livrer dans la deadline que tu as fixée. Je préférais te prévenir tout de suite pour qu'on soit raccord et qu'on évite les mauvaises surprises
